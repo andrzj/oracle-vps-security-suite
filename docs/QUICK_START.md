@@ -1,226 +1,235 @@
-# Quick Start: Security Hardening Scripts
+# Quick Start Guide
 
-## TL;DR - Run This First
+## Recommended: One-Command Install
+
+The guided installer handles everything — hardening, monitoring, dashboard configuration, and deployment — in a single interactive session:
 
 ```bash
-# Download and run the main hardening script
-sudo bash debian_security_hardening.sh
-
-# Verify everything worked
-bash verify_security.sh
-
-# Test SSH connection (in a new terminal)
-ssh -i your-key.pem ubuntu@your-instance-ip
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
+cd oracle-vps-security-suite
+sudo bash main.sh
 ```
+
+The installer will ask you a small number of questions (SSH port, trusted IP, domain, credentials) and do the rest automatically. It is **idempotent** — if interrupted, re-run it and it will skip completed phases.
+
+**Estimated time:** 5–10 minutes on a fresh Oracle Cloud free tier instance.
 
 ---
 
-## Script Files
+## Manual Setup (Step by Step)
 
-| Script | Purpose | Requires Root | Time |
-|--------|---------|---------------|------|
-| `debian_security_hardening.sh` | Main hardening - SSH, firewall, Fail2Ban, kernel hardening | Yes | 5-15 min |
-| `setup_ssh_2fa.sh` | Add 2FA/MFA to SSH (optional) | Yes | 2 min |
-| `configure_firewall.sh` | Interactive firewall management | Yes | 1-5 min |
-| `verify_security.sh` | Check security status and view logs | No | 1 min |
+If you prefer to run each phase individually, follow the steps below.
 
 ---
 
-## Step-by-Step Instructions
-
-### 1. Run Main Hardening Script
+### Step 1 — System Hardening
 
 ```bash
-sudo bash debian_security_hardening.sh
+sudo bash scripts/hardening/debian_security_hardening.sh
 ```
 
-This script will:
-- ✓ Update all packages
-- ✓ Harden SSH (disable root login, password auth)
-- ✓ Enable UFW firewall
-- ✓ Install Fail2Ban
-- ✓ Apply kernel hardening
-- ✓ Enable automatic security updates
+This hardens the OS in one pass:
+- Updates all system packages
+- Hardens SSH (disables root login, disables password authentication)
+- Enables UFW firewall with default-deny inbound policy
+- Installs and configures Fail2Ban
+- Applies kernel hardening parameters
+- Enables automatic security updates
+- Initialises AIDE file integrity monitoring
 
-**Important:** Do NOT close your SSH session until you verify it still works!
-
-### 2. Verify in a New Terminal
-
-Open a **new terminal** and test SSH:
+**Critical:** Do NOT close your current SSH session until you have verified access in a new terminal.
 
 ```bash
-ssh -i your-key.pem ubuntu@your-instance-ip
+# Open a new terminal and test before closing the current one
+ssh -i your-key.pem ubuntu@YOUR_VPS_IP
 ```
 
-If this works, you're good! If not, use OCI Console to fix the issue.
+If the connection fails, use the Oracle Cloud Console → Compute → Instances → Console Connection to regain access and check `/etc/ssh/sshd_config`.
 
-### 3. Check Security Status
+---
+
+### Step 2 — Verify Hardening
 
 ```bash
-bash verify_security.sh
+bash scripts/utilities/verify_security.sh
 ```
 
-This shows:
-- ✓ SSH configuration status
-- ✓ Firewall rules
-- ✓ Fail2Ban status
-- ✓ System hardening parameters
-- ✓ Recent security logs
+Checks SSH configuration, UFW status, Fail2Ban, kernel parameters, and automatic updates. Review any warnings before proceeding.
 
-### 4 (Optional). Add 2FA to SSH
+---
 
-For extra security, add two-factor authentication:
+### Step 3 — Optional: SSH 2FA
+
+For an additional layer of authentication, add Google Authenticator TOTP to SSH:
 
 ```bash
-sudo bash setup_ssh_2fa.sh
-```
+sudo bash scripts/hardening/setup_ssh_2fa.sh
 
-Then as your regular user:
-
-```bash
+# Then, as your regular user (not root), generate your secret:
 google-authenticator
 ```
 
-Scan the QR code with Google Authenticator app and save emergency codes.
-
-### 5 (Optional). Configure Additional Firewall Rules
-
-If you need to open ports for services:
-
-```bash
-sudo bash configure_firewall.sh
-```
-
-Menu options:
-- View current rules
-- Allow HTTP/HTTPS
-- Allow database ports
-- Add custom ports
-- Change SSH port
+Scan the QR code with the Google Authenticator app and save the emergency codes in a secure location.
 
 ---
 
-## Common Issues & Solutions
+### Step 4 — Install Security Monitoring
+
+```bash
+sudo bash scripts/monitoring/security_monitor.sh --install
+```
+
+Installs the monitoring service as a systemd unit that starts automatically on boot. It monitors SSH attempts, sudo usage, firewall blocks, and system health.
+
+```bash
+# Verify the service is running
+sudo systemctl status security-monitor
+
+# View recent alerts
+bash scripts/monitoring/security_monitor.sh --view-alerts
+```
+
+---
+
+### Step 5 — Optional: Email Alerts
+
+```bash
+sudo bash scripts/monitoring/setup_email_alerts.sh
+```
+
+Configures email notifications for critical security events. Supports local Postfix delivery or an external SMTP provider (Gmail, SendGrid, etc.).
+
+---
+
+### Step 6 — Optional: Schedule Auto-Updates
+
+```bash
+sudo bash scripts/updates/update_monitor.sh --schedule
+```
+
+Configures a weekly cron job to check for and apply updates to the monitoring scripts automatically.
+
+---
+
+### Step 7 — Deploy the Security Dashboard
+
+The dashboard provides a browser-based interface for monitoring alerts, managing Fail2Ban bans, viewing firewall rules, and reading logs.
+
+```bash
+cd vps-security-dashboard/docker
+cp env.template .env
+nano .env   # fill in DOMAIN, TRUSTED_IP, JWT_SECRET, and Manus credentials
+chmod 600 .env
+```
+
+Configure the Caddyfile:
+
+```bash
+nano caddy/Caddyfile
+# Replace YOUR_DOMAIN and YOUR_HOME_IP
+```
+
+Install the sudoers config for least-privilege host access:
+
+```bash
+sudo cp sudoers-dashboard.conf /etc/sudoers.d/dashboard
+sudo chmod 440 /etc/sudoers.d/dashboard
+sudo visudo -c   # validate — never skip this
+```
+
+Open ports 80 and 443 in your Oracle Cloud Security List, then deploy:
+
+```bash
+docker compose up -d
+docker compose ps   # verify containers are healthy
+```
+
+See [`vps-security-dashboard/DEPLOYMENT.md`](../vps-security-dashboard/DEPLOYMENT.md) for the full deployment guide including DNS setup, backup procedures, and troubleshooting.
+
+---
+
+## Script Quick Reference
+
+| Situation | Command |
+|-----------|---------|
+| Full guided install | `sudo bash main.sh` |
+| OS hardening only | `sudo bash scripts/hardening/debian_security_hardening.sh` |
+| Add SSH 2FA | `sudo bash scripts/hardening/setup_ssh_2fa.sh` |
+| Install monitoring service | `sudo bash scripts/monitoring/security_monitor.sh --install` |
+| View security alerts | `bash scripts/monitoring/security_monitor.sh --view-alerts` |
+| Analyse logs | `bash scripts/monitoring/analyze_logs.sh` |
+| Open a port for a service | `sudo bash scripts/utilities/configure_firewall.sh` |
+| Verify hardening is intact | `bash scripts/utilities/verify_security.sh` |
+| Update monitoring scripts | `sudo bash scripts/updates/update_monitor.sh --update` |
+| Roll back after bad update | `sudo bash scripts/updates/update_monitor.sh --rollback` |
+
+---
+
+## Common Issues
 
 ### "Permission denied" when running scripts
 
-Make sure to use `sudo`:
 ```bash
-sudo bash debian_security_hardening.sh
+sudo bash scripts/hardening/debian_security_hardening.sh
 ```
 
-### SSH connection fails after running script
+All hardening and monitoring scripts require root privileges. Prefix with `sudo bash`.
 
-1. Open OCI Console → Compute → Instances → Your Instance
-2. Click "Console Connection" to access via VNC
-3. Check SSH config: `sudo sshd -t`
-4. Restore backup if needed: `sudo cp /etc/ssh/sshd_config.backup* /etc/ssh/sshd_config`
-5. Restart SSH: `sudo systemctl restart ssh`
+### SSH connection fails after hardening
 
-### Firewall is blocking my service
-
-1. Check current rules: `sudo ufw status numbered`
-2. Add the port: `sudo ufw allow 8080/tcp` (replace 8080 with your port)
-3. Also update OCI Security List in Console
-
-### Changed SSH port but can't connect
-
-1. Use OCI Console to access instance
-2. Update OCI Security List to allow new SSH port
-3. Verify SSH config: `sudo sshd -t`
+1. Open Oracle Cloud Console → Compute → Instances → your instance → Console Connection
+2. Check SSH config: `sudo sshd -t`
+3. Restore backup if needed: `sudo cp /etc/ssh/sshd_config.backup.* /etc/ssh/sshd_config`
 4. Restart SSH: `sudo systemctl restart ssh`
 
----
+### Changed SSH port but cannot connect
 
-## What Gets Hardened
+1. Update the Oracle Cloud Security List to allow TCP on the new port
+2. Verify the config: `sudo sshd -t`
+3. Restart SSH: `sudo systemctl restart ssh`
+4. Connect with: `ssh -p NEW_PORT -i your-key.pem ubuntu@YOUR_VPS_IP`
 
-### SSH
-- ✓ Root login disabled
-- ✓ Password authentication disabled
-- ✓ X11 forwarding disabled
-- ✓ Port forwarding disabled
-- ✓ Strong key exchange algorithms
-- ✓ Strong ciphers and MACs
+### Firewall is blocking a service
 
-### Firewall
-- ✓ UFW installed and enabled
-- ✓ Default deny incoming
-- ✓ Default allow outgoing
-- ✓ SSH, HTTP, HTTPS allowed
-- ✓ All other ports blocked by default
-
-### Intrusion Prevention
-- ✓ Fail2Ban installed
-- ✓ SSH brute-force protection
-- ✓ Automatic IP banning after 3 failed attempts
-- ✓ 1-hour ban duration
-
-### System
-- ✓ All packages updated
-- ✓ Kernel hardening parameters applied
-- ✓ Automatic security updates enabled
-- ✓ File integrity monitoring (AIDE) initialized
-- ✓ Password security policies configured
-
----
-
-## Monitoring After Hardening
-
-### Check SSH logs
-```bash
-sudo tail -20 /var/log/auth.log
-```
-
-### Check Fail2Ban activity
-```bash
-sudo fail2ban-client status sshd
-```
-
-### Check firewall status
 ```bash
 sudo ufw status numbered
+sudo ufw allow 8080/tcp   # replace with your port
+# Also open the port in Oracle Cloud Security List
 ```
 
-### Check for available updates
+### Dashboard shows 403 Forbidden
+
+Your IP is not in the Caddyfile's `remote_ip` list. Update it and reload:
+
 ```bash
-sudo apt list --upgradable
+nano vps-security-dashboard/docker/caddy/Caddyfile
+# Update the remote_ip line
+
+cd vps-security-dashboard/docker
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
-### View security verification
+---
+
+## After Setup — Ongoing Operations
+
+### Daily
 ```bash
-bash verify_security.sh --monitor
+bash scripts/monitoring/security_monitor.sh --view-alerts
+```
+
+### Weekly
+```bash
+bash scripts/monitoring/analyze_logs.sh --report
+bash scripts/updates/update_monitor.sh --check
+```
+
+### Monthly
+```bash
+bash scripts/utilities/verify_security.sh
+sudo bash scripts/monitoring/security_monitor.sh --report
 ```
 
 ---
 
-## Important Notes
-
-1. **Backup your SSH key** - Store it in a safe place
-2. **Test SSH before closing session** - Don't lose access!
-3. **Update OCI Security List** - If you change SSH port
-4. **Keep instance active** - Idle instances may be reclaimed (>20% CPU/network for 7 days)
-5. **Monitor logs regularly** - Check `/var/log/auth.log` for suspicious activity
-
----
-
-## Next Steps
-
-1. ✓ Run `debian_security_hardening.sh`
-2. ✓ Test SSH in new terminal
-3. ✓ Run `verify_security.sh`
-4. ✓ (Optional) Run `setup_ssh_2fa.sh` for 2FA
-5. ✓ (Optional) Run `configure_firewall.sh` to add service ports
-6. ✓ Deploy your application
-7. ✓ Monitor logs regularly
-
----
-
-## Support
-
-For issues:
-1. Check the "Common Issues & Solutions" section above
-2. Run `bash verify_security.sh` to check status
-3. Review logs: `sudo tail -50 /var/log/auth.log`
-4. Use OCI Console for emergency access if needed
-
-Good luck! Your server is now hardened and ready for public services. 🔒
+Your VPS is now hardened, monitored, and ready for public services.

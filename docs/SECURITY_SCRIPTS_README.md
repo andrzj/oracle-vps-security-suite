@@ -1,6 +1,22 @@
-# Oracle Cloud / Debian VPS Security Hardening Scripts
+# Security Scripts Reference
 
 This package contains automated security hardening scripts designed specifically for Debian-based VPS instances on Oracle Cloud free tier. These scripts implement industry best practices for securing a public-facing server.
+
+## Recommended Starting Point
+
+Rather than running individual scripts, use the unified guided installer which orchestrates all scripts in the correct order:
+
+```bash
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
+cd oracle-vps-security-suite
+sudo bash main.sh
+```
+
+The installer is interactive, idempotent, and handles all four phases automatically. See the [main README](../README.md) for details.
+
+The scripts below can also be run individually if you need to apply a specific phase or re-run a single step.
+
+---
 
 ## Scripts Overview
 
