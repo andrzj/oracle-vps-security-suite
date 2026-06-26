@@ -1,0 +1,95 @@
+# Logs
+*.log
+logs/
+*.log.*
+
+# Backups
+backups/
+*.backup
+*.bak
+*.tar.gz
+
+# Configuration files with sensitive data
+config.local.conf
+*.local.conf
+.env
+.env.local
+
+# System files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# SSH keys
+*.pem
+*.key
+*.pub
+id_rsa
+id_rsa.pub
+
+# Credentials
+credentials.txt
+secrets.txt
+passwords.txt
+
+# Reports (local only)
+reports/
+*.report
+
+# State files
+.state
+*.state
+state/
+
+# PID files
+*.pid
+
+# Lock files
+*.lock
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+dist/
+build/
+*.egg-info/
