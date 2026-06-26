@@ -24,3 +24,16 @@
 
 ## Testing
 - [x] Vitest tests for auth, health, alerts, audit, firewall, fail2ban (16 tests passing)
+
+## SQLite Migration (MySQL → SQLite)
+- [x] Install better-sqlite3 and @types/better-sqlite3, remove mysql2
+- [x] Update drizzle.config.ts to use sqlite dialect
+- [x] Rewrite drizzle/schema.ts using sqliteTable column types
+- [x] Update server/db.ts to use better-sqlite3 driver
+- [x] Update server/_core files that reference MySQL/DATABASE_URL
+- [x] Remove MySQL db service from docker-compose.yml
+- [x] Update Dockerfile to persist SQLite file via volume
+- [x] Update env.template and DEPLOYMENT.md to remove MySQL vars
+- [x] Run pnpm db:push and verify migrations
+- [x] Run pnpm test and verify all 16 tests pass
+- [x] Push corrected code to GitHub

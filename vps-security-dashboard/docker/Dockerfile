@@ -2,12 +2,15 @@
 # VPS Security Dashboard — Production Dockerfile
 # Multi-stage build: builder → production
 # Base: node:24-alpine (Node.js 24 LTS "Krypton")
+#
+# Database: SQLite via better-sqlite3 (single file, zero extra services)
+# The SQLite file is stored in /app/data/ which is mounted as a Docker volume.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
 FROM node:24-alpine AS builder
 
-# Install build dependencies
+# Build dependencies: python3/make/g++ are required for better-sqlite3 native bindings
 RUN apk add --no-cache python3 make g++ libc6-compat
 
 # Install pnpm
@@ -20,6 +23,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 
 # Install all dependencies (including devDependencies for build)
+# better-sqlite3 native bindings are compiled here
 RUN pnpm install --frozen-lockfile
 
 # Copy source files
@@ -31,15 +35,17 @@ RUN pnpm run build
 # ── Stage 2: Production ───────────────────────────────────────────────────────
 FROM node:24-alpine AS production
 
-# Install runtime dependencies only
+# Runtime dependencies:
+#   python3/make/g++ — required to rebuild better-sqlite3 native bindings for production
+#   sudo             — for running ufw and fail2ban-client with least privilege
+#   wget             — for Docker health checks
+#   tzdata           — timezone data
+#   procps           — process utilities (ps, etc.)
 RUN apk add --no-cache \
-    # For running system commands
+    python3 make g++ \
     sudo \
-    # For health checks
     wget \
-    # Timezone data
     tzdata \
-    # Process utilities
     procps
 
 # Create non-root user for the app
@@ -56,16 +62,18 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 
 # Install production dependencies only
+# This recompiles better-sqlite3 native bindings for the production Alpine image
 RUN pnpm install --frozen-lockfile --prod
 
 # Copy built artifacts from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/client/dist ./client/dist
 
-# Copy drizzle migrations
+# Copy drizzle schema and migrations
 COPY --from=builder /app/drizzle ./drizzle
 
-# Create data directory
+# Create SQLite data directory and set ownership
+# This directory is mounted as a Docker volume for persistence
 RUN mkdir -p /app/data && chown dashboard:dashboard /app/data
 
 # Switch to non-root user

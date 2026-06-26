@@ -36,14 +36,13 @@ async function audit(
     resourceId: resourceId ?? undefined,
     status,
     details,
-    createdAt: new Date(),
   });
 }
 
 const healthRouter = router({
   current: protectedProcedure.query(async () => {
     const live = await agent.getSystemHealth();
-    await insertSystemHealth({ cpuUsage: live.cpu, memoryUsage: live.memory, diskUsage: live.disk, loadAverage: live.loadAverage, uptime: live.uptime, createdAt: new Date() });
+    await insertSystemHealth({ cpuUsage: live.cpu, memoryUsage: live.memory, diskUsage: live.disk, loadAverage: live.loadAverage, uptime: live.uptime });
     return live;
   }),
   history: protectedProcedure.input(z.object({ hours: z.number().min(1).max(168).default(24) })).query(async ({ input }) => getSystemHealthHistory(input.hours)),
@@ -85,7 +84,7 @@ const fail2banRouter = router({
   unbanIP: protectedProcedure.input(z.object({ ip: z.string().min(7).max(45), jail: z.string().min(1).max(64) })).mutation(async ({ ctx, input }) => {
     const result = await agent.unbanIP(input.ip, input.jail);
     await audit(ctx.user.id, "unban_ip", "fail2ban", input.ip, result.success ? "success" : "failure");
-    if (result.success) await insertFail2BanEvent({ ipAddress: input.ip, jail: input.jail, bannedAt: new Date(), unbannedAt: new Date(), reason: "Manual unban via dashboard" });
+    if (result.success) await insertFail2BanEvent({ ipAddress: input.ip, jail: input.jail, unbannedAt: new Date().toISOString(), reason: "Manual unban via dashboard" });
     return result;
   }),
   history: protectedProcedure.input(z.object({ limit: z.number().min(1).max(200).default(50) })).query(async ({ input }) => getFail2BanHistory(input.limit)),
@@ -101,7 +100,7 @@ const firewallRouter = router({
   addRule: protectedProcedure.input(z.object({ action: z.enum(["allow", "deny"]), port: z.string().min(1).max(32), protocol: z.enum(["tcp", "udp", "any"]), direction: z.enum(["in", "out"]), description: z.string().max(256).optional() })).mutation(async ({ ctx, input }) => {
     const result = await agent.addFirewallRule(input.action, input.port, input.protocol);
     await audit(ctx.user.id, "add_firewall_rule", "firewall", input.port, result.success ? "success" : "failure");
-    if (result.success) await insertFirewallRule({ action: input.action, port: input.port, protocol: input.protocol, direction: input.direction, description: input.description, enabled: true, createdAt: new Date(), createdBy: ctx.user.id });
+    if (result.success) await insertFirewallRule({ action: input.action, port: input.port, protocol: input.protocol, direction: input.direction, description: input.description, enabled: true, createdBy: ctx.user.id });
     return result;
   }),
   deleteRule: protectedProcedure.input(z.object({ ruleNumber: z.number().min(1).max(999), dbId: z.number().optional() })).mutation(async ({ ctx, input }) => {
