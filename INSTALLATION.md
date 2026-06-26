@@ -52,7 +52,7 @@ For experienced users, complete setup in 5 minutes:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/oracle-vps-security-suite.git
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
 cd oracle-vps-security-suite
 
 # 2. Make scripts executable
@@ -92,7 +92,7 @@ sudo apt-get upgrade -y
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/oracle-vps-security-suite.git
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
 
 # Navigate to directory
 cd oracle-vps-security-suite

@@ -26,7 +26,7 @@ The Oracle Cloud VPS Security Suite provides complete security automation across
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/oracle-vps-security-suite.git
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
 cd oracle-vps-security-suite
 
 # Make scripts executable
@@ -281,7 +281,7 @@ sudo bash scripts/utilities/configure_firewall.sh
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/oracle-vps-security-suite.git
+git clone https://github.com/andrzj/oracle-vps-security-suite.git
 cd oracle-vps-security-suite
 
 # 2. Check dependencies
@@ -559,8 +559,8 @@ For issues or questions:
 
 ## 📞 Contact
 
-- GitHub Issues: [Report bugs or request features](https://github.com/yourusername/oracle-vps-security-suite/issues)
-- Discussions: [Ask questions and share ideas](https://github.com/yourusername/oracle-vps-security-suite/discussions)
+- GitHub Issues: [Report bugs or request features](https://github.com/andrzj/oracle-vps-security-suite/issues)
+- Discussions: [Ask questions and share ideas](https://github.com/andrzj/oracle-vps-security-suite/discussions)
 
 ---
 
