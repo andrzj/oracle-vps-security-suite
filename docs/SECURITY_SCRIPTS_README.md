@@ -67,7 +67,7 @@ Interactive helper script for managing UFW firewall rules after initial hardenin
 
 **What it does:**
 - Displays current firewall rules
-- Allows adding rules for common services (HTTP, HTTPS, MySQL, PostgreSQL)
+- Allows adding rules for common services (HTTP, HTTPS, and common database ports)
 - Allows adding custom port rules
 - Provides SSH port change functionality
 - Allows firewall enable/disable and reset
@@ -79,7 +79,7 @@ sudo bash configure_firewall.sh
 
 **Common use cases:**
 - Adding HTTP/HTTPS rules for web server
-- Adding database port rules for MySQL or PostgreSQL
+- Adding database port rules for any service (PostgreSQL, Redis, custom ports)
 - Changing SSH port to non-standard port
 - Viewing and managing existing rules
 
