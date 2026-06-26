@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddyfile — VPS Security Dashboard
+#
+# Replace YOUR_DOMAIN with your actual domain name.
+# Replace YOUR_HOME_IP with your home/office IP address.
+#
+# Caddy automatically obtains and renews TLS certificates via Let's Encrypt.
+# No manual certificate management required.
+#
+# IP RESTRICTION (CRITICAL SECURITY MEASURE):
+#   The dashboard is restricted to YOUR_HOME_IP only.
+#   Anyone else receives a 403 Forbidden response.
+#   This eliminates brute-force and credential-stuffing attacks entirely.
+#
+# To allow multiple IPs, add them to the remote_ip directive:
+#   remote_ip 1.2.3.4 5.6.7.8 192.168.1.0/24
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+    # Global options
+    email admin@YOUR_DOMAIN
+    # Uncomment to use Let's Encrypt staging for testing (avoids rate limits)
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+YOUR_DOMAIN {
+    # ── IP Restriction ────────────────────────────────────────────────────────
+    # IMPORTANT: Replace YOUR_HOME_IP with your actual IP address.
+    # Find your IP at: https://ifconfig.me
+    @allowed_ips {
+        remote_ip YOUR_HOME_IP
+        # Add more IPs or CIDR ranges as needed:
+        # remote_ip 10.0.0.0/8
+    }
+
+    # Block all requests not from allowed IPs
+    @blocked {
+        not remote_ip YOUR_HOME_IP
+    }
+    respond @blocked 403
+
+    # ── Security Headers ──────────────────────────────────────────────────────
+    header {
+        # Prevent clickjacking
+        X-Frame-Options "DENY"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # HSTS — enforce HTTPS for 1 year
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Content Security Policy
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.manus.im; frame-ancestors 'none';"
+        # Remove server identification
+        -Server
+        -X-Powered-By
+    }
+
+    # ── Rate Limiting ─────────────────────────────────────────────────────────
+    # Requires caddy-ratelimit plugin. If not available, remove this block.
+    # rate_limit {
+    #     zone dynamic {
+    #         key {remote_host}
+    #         events 100
+    #         window 1m
+    #     }
+    # }
+
+    # ── Proxy to App ──────────────────────────────────────────────────────────
+    reverse_proxy app:3000 {
+        # Health check
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 10s
+
+        # Forward real IP to app
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Connection settings
+        transport http {
+            keepalive 30s
+            keepalive_idle_conns 10
+        }
+    }
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log {
+        output file /data/logs/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+        level INFO
+    }
+}
+
+# ── HTTP health check endpoint (for Docker healthcheck) ───────────────────────
+:80 {
+    respond /health 200
+    redir https://{host}{uri} permanent
+}

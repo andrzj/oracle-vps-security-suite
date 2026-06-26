@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# VPS Security Dashboard — Docker Compose Stack
+#
+# Services:
+#   caddy   — Reverse proxy with automatic HTTPS (Let's Encrypt)
+#   app     — Next.js/Express security dashboard
+#
+# Usage:
+#   cp .env.example .env        # fill in your values
+#   docker compose up -d        # start everything
+#   docker compose logs -f      # follow logs
+#   docker compose down         # stop
+#
+# SECURITY NOTE: The app container needs read access to host log files
+# and limited sudo for fail2ban-client and ufw. See DEPLOYMENT.md for
+# the required sudoers configuration.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── Caddy reverse proxy ────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: vps-security-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 QUIC
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - dashboard_net
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Security Dashboard App ─────────────────────────────────────────────────
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: vps-security-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # ── Required secrets (set in .env file) ──
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      VITE_APP_ID: ${VITE_APP_ID}
+      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL}
+      VITE_OAUTH_PORTAL_URL: ${VITE_OAUTH_PORTAL_URL}
+      OWNER_OPEN_ID: ${OWNER_OPEN_ID}
+      OWNER_NAME: ${OWNER_NAME}
+      BUILT_IN_FORGE_API_KEY: ${BUILT_IN_FORGE_API_KEY}
+      BUILT_IN_FORGE_API_URL: ${BUILT_IN_FORGE_API_URL}
+      VITE_FRONTEND_FORGE_API_KEY: ${VITE_FRONTEND_FORGE_API_KEY}
+      VITE_FRONTEND_FORGE_API_URL: ${VITE_FRONTEND_FORGE_API_URL}
+      VITE_ANALYTICS_ENDPOINT: ${VITE_ANALYTICS_ENDPOINT:-}
+      VITE_ANALYTICS_WEBSITE_ID: ${VITE_ANALYTICS_WEBSITE_ID:-}
+    volumes:
+      # Read-only access to host log files
+      - /var/log:/var/log:ro
+      # Run socket for fail2ban-client and ufw (requires sudoers config)
+      - /run/fail2ban:/run/fail2ban:ro
+      # Persistent data directory
+      - app_data:/app/data
+    networks:
+      - dashboard_net
+    # The app process needs to run commands on the host via sudo.
+    # In production, configure the sudoers file as described in DEPLOYMENT.md
+    # instead of using privileged mode.
+    # privileged: true  # ← DO NOT enable; use sudoers instead
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    expose:
+      - "3000"
+
+networks:
+  dashboard_net:
+    driver: bridge
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  app_data:
+    driver: local
