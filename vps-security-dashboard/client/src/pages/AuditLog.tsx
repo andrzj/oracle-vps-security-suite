@@ -80,7 +80,7 @@ export default function AuditLog() {
                       )}
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm:ss")}
-                        {entry.userId && <span className="ml-2">· User #{entry.userId}</span>}
+                        {entry.adminId && <span className="ml-2">· Admin #{entry.adminId}</span>}
                       </p>
                     </div>
                     <Badge

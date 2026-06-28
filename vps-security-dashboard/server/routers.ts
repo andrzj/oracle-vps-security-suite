@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
+import {
+  verifyAdminCredentials,
+  createAdmin,
+  countAdmins,
+  signAdminJWT,
+} from "./db";
+import { type AdminSession } from "./_core/context";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
@@ -22,7 +29,7 @@ import {
 import * as agent from "./security-agent";
 
 async function audit(
-  userId: number,
+  adminId: number,
   action: string,
   resource: string,
   resourceId: string | null,
@@ -30,7 +37,7 @@ async function audit(
   details?: string
 ) {
   await insertAuditLog({
-    userId,
+    adminId,
     action,
     resource,
     resourceId: resourceId ?? undefined,
@@ -139,7 +146,40 @@ const auditRouter = router({
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query((opts): AdminSession | null => opts.ctx.user ?? null),
+
+    setupStatus: publicProcedure.query(() => {
+      const needsSetup = countAdmins() === 0;
+      return { needsSetup };
+    }),
+
+    setup: publicProcedure
+      .input(z.object({ username: z.string().min(3).max(32), password: z.string().min(12) }))
+      .mutation(async ({ input, ctx }) => {
+        // Only allowed when no admin exists yet
+        if (countAdmins() > 0) {
+          throw new Error("Setup already completed.");
+        }
+        const admin = await createAdmin(input.username, input.password, "admin");
+        const token = await signAdminJWT(admin);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 60 * 60 * 24 * 7 });
+        return { success: true } as const;
+      }),
+
+    login: publicProcedure
+      .input(z.object({ username: z.string(), password: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const admin = await verifyAdminCredentials(input.username, input.password);
+        if (!admin) {
+          throw new Error("Invalid username or password.");
+        }
+        const token = await signAdminJWT(admin);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 60 * 60 * 24 * 7 });
+        return { success: true } as const;
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

@@ -70,14 +70,14 @@ chmod 600 .env
 | Variable | Description | How to obtain |
 |----------|-------------|---------------|
 | `DOMAIN` | Your dashboard domain | e.g. `security.yourdomain.com` |
-| `JWT_SECRET` | Session signing key | `openssl rand -hex 64` |
+| `JWT_SECRET` | Session signing key | `openssl rand -hex 32` |
 | `TRUSTED_IP` | Your home/office IP | `curl -s ifconfig.me` |
-| `SQLITE_DB_PATH` | SQLite file path inside container | Default: `./data/security-dashboard.db` |
-| `VITE_APP_ID` | Manus OAuth app ID | Manus project → Settings |
-| `OWNER_OPEN_ID` | Your Manus OpenID | Manus account settings |
-| `BUILT_IN_FORGE_API_KEY` | Manus API key | Manus project → Secrets |
+| `SQLITE_DB_PATH` | SQLite file path inside container | Default: `/app/data/security-dashboard.db` |
+| `NODE_ENV` | Runtime mode | Set to `production` |
 
 > `SQLITE_DB_PATH` has a sensible default and only needs to be changed if you want to store the database file in a custom location.
+
+> **No external accounts required.** The dashboard uses self-contained username/password authentication stored in SQLite. On first visit, you will be prompted to create your admin account directly in the browser.
 
 ---
 
@@ -183,7 +183,7 @@ curl -I https://security.yourdomain.com
 # Expected: HTTP/2 200 (from your IP) or connection refused (from other IPs)
 ```
 
-Open `https://security.yourdomain.com` in your browser and sign in with your Manus account.
+Open `https://security.yourdomain.com` in your browser. On first visit, you will see a **First-run setup** screen — create your admin username and password (minimum 12 characters). This account is stored in the local SQLite database. No external account or platform is required.
 
 ---
 
@@ -284,8 +284,19 @@ The app container cannot reach host system commands. Verify:
 ### 403 Forbidden on the dashboard
 Your IP is not in the allowed list. Update `remote_ip` in the Caddyfile with your current IP and reload Caddy.
 
-### Authentication fails after login
-Verify `VITE_APP_ID`, `OAUTH_SERVER_URL`, and `VITE_OAUTH_PORTAL_URL` are correctly set in `.env`.
+### Login fails with "Invalid username or password"
+1. Verify you are using the credentials created during first-run setup.
+2. If you have forgotten your password, reset it by running:
+   ```bash
+   docker compose exec app node -e "
+     const bcrypt = require('bcryptjs');
+     const db = require('better-sqlite3')(process.env.SQLITE_DB_PATH);
+     const hash = bcrypt.hashSync('NewPassword123!', 12);
+     db.prepare(\"UPDATE admins SET passwordHash = ? WHERE username = 'admin'\").run(hash);
+     console.log('Password reset.');
+   "
+   ```
+3. If no admin account exists at all, the first-run setup screen will appear automatically on next visit.
 
 ### SQLite database locked error
 This occurs if the app crashed mid-write. Restart the app container:

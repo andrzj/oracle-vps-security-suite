@@ -4,7 +4,7 @@
 - [x] Database schema (users, security_alerts, firewall_rules, ban_history, audit_log, system_health_history)
 - [x] tRPC API routes (health, alerts, fail2ban, firewall, logs, audit)
 - [x] Security agent module (controlled system command execution)
-- [x] Manus OAuth authentication (built-in)
+- [x] Self-contained username/password authentication (replacing Manus OAuth)
 - [x] Audit logging for all write operations
 
 ## Frontend Pages
@@ -25,6 +25,15 @@
 ## Testing
 - [x] Vitest tests for auth, health, alerts, audit, firewall, fail2ban (16 tests passing)
 
-## Documentation
-- [x] DEPLOYMENT.md — SQLite-based, Docker Compose, Caddy, backup guide
-- [x] SECURITY_SCRIPTS_README.md — removed MySQL-specific references
+## SQLite Migration (MySQL → SQLite)
+- [x] Install better-sqlite3 and @types/better-sqlite3, remove mysql2
+- [x] Update drizzle.config.ts to use sqlite dialect
+- [x] Rewrite drizzle/schema.ts using sqliteTable column types
+- [x] Update server/db.ts to use better-sqlite3 driver
+- [x] Update server/_core files that reference MySQL/DATABASE_URL
+- [x] Remove MySQL db service from docker-compose.yml
+- [x] Update Dockerfile to persist SQLite file via volume
+- [x] Update env.template and DEPLOYMENT.md to remove MySQL vars
+- [x] Run pnpm db:push and verify migrations
+- [x] Run pnpm test and verify all 16 tests pass
+- [x] Push corrected code to GitHub

@@ -373,24 +373,14 @@ phase_dashboard_config() {
     fi
 
     echo
-    echo -e "  ${BOLD}Step 3d — Manus OAuth Credentials${RESET}"
-    echo    "  Required for authentication. Find these in your Manus project settings."
-    echo    "  Leave blank if you are not using Manus OAuth (auth will be disabled)."
+    echo -e "  ${BOLD}Step 3d — Admin Account${RESET}"
+    echo    "  The dashboard uses self-contained authentication — no external platform needed."
+    echo    "  On first visit, you will be prompted to create your admin account in the browser."
+    echo    "  Your credentials will be stored securely (bcrypt) in the local SQLite database."
     echo
-    local vite_app_id owner_open_id forge_api_key oauth_server_url vite_oauth_portal_url
-    ask vite_app_id        "  VITE_APP_ID (Manus OAuth app ID)"
-    ask owner_open_id      "  OWNER_OPEN_ID (your Manus user ID)"
-    ask_secret forge_api_key "  BUILT_IN_FORGE_API_KEY (Manus API key)"
-    ask oauth_server_url   "  OAUTH_SERVER_URL" "https://api.manus.im"
-    ask vite_oauth_portal_url "  VITE_OAUTH_PORTAL_URL" "https://manus.im"
-
-    echo
-    echo -e "  ${BOLD}Step 3e — SQLite Database Path${RESET}"
-    echo    "  Path inside the container where the SQLite database file is stored."
-    echo    "  The default is recommended for most setups."
-    echo
+    info "No credentials to enter here. The first-run setup screen handles account creation."
     local sqlite_db_path
-    ask sqlite_db_path "  SQLITE_DB_PATH" "./data/security-dashboard.db"
+    sqlite_db_path="/app/data/security-dashboard.db"
 
     # ── Write .env file ───────────────────────────────────────────────────────
     step "Writing environment file..."
@@ -407,14 +397,8 @@ TRUSTED_IP=${trusted_ip}
 JWT_SECRET=${jwt_secret}
 
 # ── Database ──────────────────────────────────────────────────────────────────
+# SQLite file path inside the container. Persisted via Docker named volume.
 SQLITE_DB_PATH=${sqlite_db_path}
-
-# ── Manus OAuth ───────────────────────────────────────────────────────────────
-VITE_APP_ID=${vite_app_id}
-OWNER_OPEN_ID=${owner_open_id}
-BUILT_IN_FORGE_API_KEY=${forge_api_key}
-OAUTH_SERVER_URL=${oauth_server_url}
-VITE_OAUTH_PORTAL_URL=${vite_oauth_portal_url}
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 NODE_ENV=production

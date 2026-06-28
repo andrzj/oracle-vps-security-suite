@@ -1,43 +1,37 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import { relations, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 /**
- * Core user table backing auth flow.
- * Columns use camelCase to match both database fields and generated types.
- *
- * SQLite notes:
- *  - INTEGER PRIMARY KEY is the rowid alias — autoincrement is implicit.
- *  - Timestamps stored as ISO-8601 text (SQLite has no native timestamp type).
- *  - Enums are enforced at the application layer via Zod; SQLite stores them as text.
+ * Self-contained admin credentials table.
+ * Passwords are stored as bcrypt hashes (cost factor 12).
+ * No external OAuth provider is required — the dashboard is fully standalone.
  */
-export const users = sqliteTable("users", {
+export const admins = sqliteTable("admins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
-  openId: text("openId").notNull().unique(),
-  name: text("name"),
-  email: text("email"),
-  loginMethod: text("loginMethod"),
-  role: text("role", { enum: ["user", "admin"] }).default("user").notNull(),
-  createdAt: text("createdAt").default(sql`(datetime('now'))`).notNull(),
-  updatedAt: text("updatedAt").default(sql`(datetime('now'))`).notNull(),
-  lastSignedIn: text("lastSignedIn").default(sql`(datetime('now'))`).notNull(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role", { enum: ["admin", "viewer"] }).default("admin").notNull(),
+  createdAt: text("created_at").default(sql`(datetime('now'))`).notNull(),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`).notNull(),
+  lastSignedIn: text("last_signed_in"),
 });
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
+export type Admin = typeof admins.$inferSelect;
+export type InsertAdmin = typeof admins.$inferInsert;
 
 // ── Security Dashboard Tables ─────────────────────────────────────────────────
 
 export const auditLogs = sqliteTable("audit_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").notNull(),
+  adminId: integer("admin_id"),
+  username: text("username"),
   action: text("action").notNull(),
   resource: text("resource"),
   resourceId: text("resource_id"),
   status: text("status", { enum: ["success", "failure"] }).notNull(),
   details: text("details"),
   ipAddress: text("ip_address"),
-  createdAt: text("createdAt").default(sql`(datetime('now'))`).notNull(),
+  createdAt: text("created_at").default(sql`(datetime('now'))`).notNull(),
 });
 
 export type AuditLog = typeof auditLogs.$inferSelect;
@@ -53,9 +47,9 @@ export const securityAlerts = sqliteTable("security_alerts", {
   count: integer("count").default(1),
   acknowledged: integer("acknowledged", { mode: "boolean" }).default(false),
   acknowledgedBy: integer("acknowledged_by"),
-  acknowledgedAt: text("acknowledgedAt"),
-  createdAt: text("createdAt").default(sql`(datetime('now'))`).notNull(),
-  updatedAt: text("updatedAt").default(sql`(datetime('now'))`).notNull(),
+  acknowledgedAt: text("acknowledged_at"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`).notNull(),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`).notNull(),
 });
 
 export type SecurityAlert = typeof securityAlerts.$inferSelect;
@@ -68,7 +62,7 @@ export const systemHealth = sqliteTable("system_health", {
   diskUsage: real("disk_usage"),
   loadAverage: text("load_average"),
   uptime: integer("uptime"),
-  createdAt: text("createdAt").default(sql`(datetime('now'))`).notNull(),
+  createdAt: text("created_at").default(sql`(datetime('now'))`).notNull(),
 });
 
 export type SystemHealth = typeof systemHealth.$inferSelect;
@@ -78,8 +72,8 @@ export const fail2banHistory = sqliteTable("fail2ban_history", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ipAddress: text("ip_address").notNull(),
   jail: text("jail").notNull(),
-  bannedAt: text("bannedAt").default(sql`(datetime('now'))`).notNull(),
-  unbannedAt: text("unbannedAt"),
+  bannedAt: text("banned_at").default(sql`(datetime('now'))`).notNull(),
+  unbannedAt: text("unbanned_at"),
   reason: text("reason"),
   banCount: integer("ban_count").default(1),
 });
@@ -96,24 +90,9 @@ export const firewallRules = sqliteTable("firewall_rules", {
   direction: text("direction", { enum: ["in", "out"] }).notNull(),
   description: text("description"),
   enabled: integer("enabled", { mode: "boolean" }).default(true),
-  createdAt: text("createdAt").default(sql`(datetime('now'))`).notNull(),
+  createdAt: text("created_at").default(sql`(datetime('now'))`).notNull(),
   createdBy: integer("created_by"),
 });
 
 export type FirewallRule = typeof firewallRules.$inferSelect;
 export type InsertFirewallRule = typeof firewallRules.$inferInsert;
-
-// ── Relations ─────────────────────────────────────────────────────────────────
-
-export const usersRelations = relations(users, ({ many }) => ({
-  auditLogs: many(auditLogs),
-  firewallRules: many(firewallRules),
-}));
-
-export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
-  user: one(users, { fields: [auditLogs.userId], references: [users.id] }),
-}));
-
-export const firewallRulesRelations = relations(firewallRules, ({ one }) => ({
-  createdByUser: one(users, { fields: [firewallRules.createdBy], references: [users.id] }),
-}));
