@@ -37,3 +37,14 @@
 - [x] Run pnpm db:push and verify migrations
 - [x] Run pnpm test and verify all 16 tests pass
 - [x] Push corrected code to GitHub
+
+## Coolify Deployment Restructure
+- [x] Move Dockerfile to project root, simplify for Coolify (remove Caddy references)
+- [x] Delete docker/docker-compose.yml and docker/caddy/ directory
+- [x] Create env.example at project root (documentation only)
+- [x] Move sudoers-dashboard.conf to project root
+- [x] Rewrite main.sh Phase 3 and Phase 4 for Coolify workflow
+- [x] Update DEPLOYMENT.md for Coolify-based deployment
+- [x] Update README.md architecture section
+- [x] Update QUICK_START.md for Coolify workflow
+- [x] All tests pass, build verified, pushed to GitHub

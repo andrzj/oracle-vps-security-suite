@@ -6,8 +6,8 @@
 #
 #   Phase 1 — System Hardening   (SSH, UFW, Fail2Ban, kernel, auto-updates)
 #   Phase 2 — Security Monitoring (real-time log monitoring as a service)
-#   Phase 3 — Dashboard Config    (collect env vars, configure Caddy)
-#   Phase 4 — Dashboard Deploy    (Docker Compose up, health check)
+#   Phase 3 — Dashboard Config    (sudoers install + Coolify env var reference)
+#   Phase 4 — Dashboard Deploy    (Coolify UI walkthrough guide)
 #
 # Usage:
 #   git clone https://github.com/andrzj/oracle-vps-security-suite.git
@@ -112,7 +112,6 @@ check_internet() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$SCRIPT_DIR/scripts"
 DASHBOARD_DIR="$SCRIPT_DIR/vps-security-dashboard"
-DOCKER_DIR="$DASHBOARD_DIR/docker"
 LOG_FILE="/var/log/vps-security-installer.log"
 
 # Redirect all output to log file as well
@@ -136,8 +135,8 @@ welcome() {
     echo
     echo -e "  ${CYAN}Phase 1${RESET}  System Hardening    — SSH, UFW firewall, Fail2Ban, kernel"
     echo -e "  ${CYAN}Phase 2${RESET}  Security Monitoring — Real-time log monitoring service"
-    echo -e "  ${CYAN}Phase 3${RESET}  Dashboard Config    — Collect credentials and configure Caddy"
-    echo -e "  ${CYAN}Phase 4${RESET}  Dashboard Deploy    — Docker Compose launch and health check"
+    echo -e "  ${CYAN}Phase 3${RESET}  Dashboard Config    — Install sudoers + Coolify env var reference"
+    echo -e "  ${CYAN}Phase 4${RESET}  Dashboard Deploy    — Coolify UI walkthrough guide"
     echo
     echo -e "  ${DIM}Estimated time: 5–10 minutes${RESET}"
     echo -e "  ${DIM}Log file: ${LOG_FILE}${RESET}"
@@ -314,127 +313,72 @@ phase_dashboard_config() {
     echo    "║  Phase 3 — Dashboard Configuration       ║"
     echo -e "╚══════════════════════════════════════════╝${RESET}"
     echo
-    echo    "  This phase collects the credentials needed to run the security"
-    echo    "  dashboard and writes them to the Docker environment file."
+    echo    "  This phase installs the sudoers configuration that lets the"
+    echo    "  dashboard container read host security data (UFW, Fail2Ban, logs)."
+    echo    "  It also prints the environment variables you will need to enter"
+    echo    "  in the Coolify UI during Phase 4."
     echo
 
     if state_done "dashboard_config"; then
-        warn "Dashboard was already configured in a previous run."
-        if ! confirm "  Re-configure? (This will overwrite the existing .env file)"; then
-            return 0
-        fi
-    fi
-
-    if [[ ! -d "$DOCKER_DIR" ]]; then
-        error "Dashboard docker directory not found at $DOCKER_DIR"
-        echo  "  Make sure you cloned the full repository."
-        exit 1
-    fi
-
-    # ── Collect values ────────────────────────────────────────────────────────
-    echo -e "  ${BOLD}Step 3a — Domain${RESET}"
-    echo    "  The domain you will use to access the dashboard."
-    echo    "  Example: security.yourdomain.com"
-    echo
-    local domain
-    ask domain "  Dashboard domain"
-    while [[ -z "$domain" ]]; do
-        warn "Domain cannot be empty."
-        ask domain "  Dashboard domain"
-    done
-
-    echo
-    echo -e "  ${BOLD}Step 3b — Trusted IP${RESET}"
-    echo    "  Only this IP address will be allowed to access the dashboard."
-    echo    "  All other IPs will receive a connection refused response."
-    echo
-    local detected_ip
-    detected_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
-    if [[ -n "$detected_ip" ]]; then
-        info "Detected your current IP: ${detected_ip}"
-    fi
-    local trusted_ip
-    ask trusted_ip "  Your trusted IP address" "${detected_ip}"
-    while [[ -z "$trusted_ip" ]]; do
-        warn "Trusted IP cannot be empty."
-        ask trusted_ip "  Your trusted IP address"
-    done
-
-    echo
-    echo -e "  ${BOLD}Step 3c — JWT Secret${RESET}"
-    echo    "  A strong random secret used to sign session cookies."
-    echo    "  Leave blank to auto-generate a secure 64-character secret."
-    echo
-    local jwt_secret
-    ask_secret jwt_secret "  JWT secret (blank to auto-generate)"
-    if [[ -z "$jwt_secret" ]]; then
-        jwt_secret=$(openssl rand -hex 64)
-        success "Auto-generated JWT secret."
-    fi
-
-    echo
-    echo -e "  ${BOLD}Step 3d — Admin Account${RESET}"
-    echo    "  The dashboard uses self-contained authentication — no external platform needed."
-    echo    "  On first visit, you will be prompted to create your admin account in the browser."
-    echo    "  Your credentials will be stored securely (bcrypt) in the local SQLite database."
-    echo
-    info "No credentials to enter here. The first-run setup screen handles account creation."
-    local sqlite_db_path
-    sqlite_db_path="/app/data/security-dashboard.db"
-
-    # ── Write .env file ───────────────────────────────────────────────────────
-    step "Writing environment file..."
-    cat > "$DOCKER_DIR/.env" <<EOF
-# VPS Security Dashboard — Environment Configuration
-# Generated by main.sh on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-# Permissions: chmod 600 .env
-
-# ── Domain & Network ──────────────────────────────────────────────────────────
-DOMAIN=${domain}
-TRUSTED_IP=${trusted_ip}
-
-# ── Security ──────────────────────────────────────────────────────────────────
-JWT_SECRET=${jwt_secret}
-
-# ── Database ──────────────────────────────────────────────────────────────────
-# SQLite file path inside the container. Persisted via Docker named volume.
-SQLITE_DB_PATH=${sqlite_db_path}
-
-# ── Runtime ───────────────────────────────────────────────────────────────────
-NODE_ENV=production
-EOF
-    chmod 600 "$DOCKER_DIR/.env"
-    success "Environment file written to $DOCKER_DIR/.env (permissions: 600)"
-
-    # ── Update Caddyfile ──────────────────────────────────────────────────────
-    step "Configuring Caddyfile..."
-    local caddyfile="$DOCKER_DIR/caddy/Caddyfile"
-    if [[ -f "$caddyfile" ]]; then
-        sed -i \
-            -e "s/YOUR_DOMAIN/${domain}/g" \
-            -e "s/YOUR_HOME_IP/${trusted_ip}/g" \
-            "$caddyfile"
-        success "Caddyfile updated with domain '${domain}' and IP '${trusted_ip}'."
-    else
-        warn "Caddyfile not found at $caddyfile — you will need to configure it manually."
+        warn "Dashboard was already configured in a previous run. Skipping."
+        return 0
     fi
 
     # ── Sudoers ───────────────────────────────────────────────────────────────
     step "Installing sudoers configuration..."
-    local sudoers_src="$DOCKER_DIR/sudoers-dashboard.conf"
+    local sudoers_src="$DASHBOARD_DIR/sudoers-dashboard.conf"
     if [[ -f "$sudoers_src" ]]; then
         cp "$sudoers_src" /etc/sudoers.d/dashboard
         chmod 440 /etc/sudoers.d/dashboard
-        if sudo visudo -c &>/dev/null; then
+        if visudo -c &>/dev/null; then
             success "Sudoers configuration installed and validated."
+            info "The dashboard container can now read UFW rules, Fail2Ban status, and system logs."
         else
             error "Sudoers file failed validation. Removing to prevent lockout."
             rm -f /etc/sudoers.d/dashboard
-            warn "Install sudoers manually: sudo cp $sudoers_src /etc/sudoers.d/dashboard"
+            warn "Install sudoers manually after fixing the file:"
+            warn "  sudo cp $sudoers_src /etc/sudoers.d/dashboard && sudo chmod 440 /etc/sudoers.d/dashboard"
         fi
     else
-        warn "sudoers-dashboard.conf not found. Skipping — install manually if needed."
+        warn "sudoers-dashboard.conf not found at $sudoers_src"
+        warn "Make sure you cloned the full repository. Skipping sudoers install."
     fi
+
+    # ── Generate JWT secret ───────────────────────────────────────────────────
+    echo
+    step "Generating a JWT secret for Coolify..."
+    local jwt_secret
+    jwt_secret=$(openssl rand -hex 64)
+    success "JWT secret generated."
+
+    # ── Print Coolify env var reference ───────────────────────────────────────
+    echo
+    divider
+    echo -e "\n  ${BOLD}${CYAN}Coolify Environment Variables${RESET}"
+    echo    "  Copy these values into Coolify → your app → Environment Variables"
+    echo    "  before triggering the first deployment."
+    echo
+    echo -e "  ${BOLD}Variable              Value${RESET}"
+    echo    "  ──────────────────────────────────────────────────────────────"
+
+    local detected_ip
+    detected_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || echo "<your-home-ip>")
+
+    echo -e "  ${CYAN}DOMAIN${RESET}                <your-dashboard-domain>  (e.g. security.example.com)"
+    echo -e "  ${CYAN}TRUSTED_IP${RESET}            ${detected_ip}  (your home/office IP — detected above)"
+    echo -e "  ${CYAN}JWT_SECRET${RESET}            ${jwt_secret}"
+    echo -e "  ${CYAN}SQLITE_DB_PATH${RESET}        /app/data/security-dashboard.db"
+    echo -e "  ${CYAN}NODE_ENV${RESET}              production"
+    echo
+    echo -e "  ${DIM}TRUSTED_IP is used by Coolify's built-in IP allowlist (not a Caddyfile).${RESET}"
+    echo -e "  ${DIM}SQLITE_DB_PATH must match the Coolify persistent volume mount path.${RESET}"
+    echo -e "  ${DIM}The JWT_SECRET above was freshly generated — copy it now.${RESET}"
+    divider
+    echo
+    echo -e "  ${BOLD}Admin account:${RESET}"
+    echo    "  The dashboard has no default credentials. On first visit you will"
+    echo    "  see a setup screen to create your admin username and password."
+    echo
 
     save_state "dashboard_config"
     echo
@@ -442,118 +386,143 @@ EOF
 }
 
 # =============================================================================
-# PHASE 4 — DASHBOARD DEPLOY
+# PHASE 4 — DASHBOARD DEPLOY (COOLIFY)
 # =============================================================================
 phase_dashboard_deploy() {
     divider
     echo -e "\n${CYAN}${BOLD}╔══════════════════════════════════════════╗"
-    echo    "║  Phase 4 — Dashboard Deploy               ║"
+    echo    "║  Phase 4 — Dashboard Deploy (Coolify)    ║"
     echo -e "╚══════════════════════════════════════════╝${RESET}"
     echo
-    echo    "  This phase checks Docker is installed, then launches the"
-    echo    "  security dashboard stack with Docker Compose."
+    echo    "  Coolify is already installed on your VPS. This phase walks you"
+    echo    "  through connecting the GitHub repository and triggering the first"
+    echo    "  deployment entirely from the Coolify web UI."
     echo
 
-    # ── Docker check ─────────────────────────────────────────────────────────
-    step "Checking Docker installation..."
-    if ! command -v docker &>/dev/null; then
-        warn "Docker is not installed. Installing now..."
-        curl -fsSL https://get.docker.com | sh
-        usermod -aG docker "$SUDO_USER" 2>/dev/null || true
-        success "Docker installed."
+    # ── Verify Coolify is running ─────────────────────────────────────────
+    step "Verifying Coolify is reachable..."
+    if curl -sf --max-time 5 http://localhost:8000 > /dev/null 2>&1 || \
+       curl -sf --max-time 5 http://localhost:3000 > /dev/null 2>&1; then
+        success "Coolify appears to be running."
     else
-        success "Docker found: $(docker --version)"
+        warn "Could not reach Coolify on localhost:8000 or localhost:3000."
+        info "Make sure Coolify is installed and running before proceeding."
+        info "Install guide: https://coolify.io/docs/installation"
     fi
 
-    if ! docker compose version &>/dev/null; then
-        warn "Docker Compose plugin not found. Installing..."
-        apt-get install -y docker-compose-plugin
-        success "Docker Compose installed."
-    else
-        success "Docker Compose found: $(docker compose version)"
-    fi
-
-    # ── DNS check ────────────────────────────────────────────────────────────
-    local domain
-    domain=$(grep "^DOMAIN=" "$DOCKER_DIR/.env" 2>/dev/null | cut -d= -f2)
-    if [[ -n "$domain" ]]; then
-        step "Checking DNS for ${domain}..."
-        local resolved_ip
-        resolved_ip=$(dig +short "$domain" 2>/dev/null | head -1)
-        local vps_ip
-        vps_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
-
-        if [[ -z "$resolved_ip" ]]; then
-            warn "DNS for '${domain}' does not resolve yet."
-            info "Point an A record to your VPS IP (${vps_ip}) before Caddy can obtain a TLS certificate."
-            info "You can still deploy now — Caddy will retry certificate issuance automatically."
-        elif [[ "$resolved_ip" == "$vps_ip" ]]; then
-            success "DNS resolves correctly: ${domain} → ${resolved_ip}"
-        else
-            warn "DNS mismatch: ${domain} resolves to ${resolved_ip}, but this VPS IP is ${vps_ip}."
-            info "Update your DNS A record to point to ${vps_ip}."
-        fi
-    fi
-
-    # ── Deploy ────────────────────────────────────────────────────────────────
-    step "Launching Docker Compose stack..."
-    cd "$DOCKER_DIR"
-    docker compose pull 2>/dev/null || true
-    docker compose up -d --build
-
-    # ── Health check ─────────────────────────────────────────────────────────
-    step "Waiting for containers to become healthy..."
-    local retries=12
-    local healthy=false
-    for (( i=1; i<=retries; i++ )); do
-        local app_status caddy_status
-        app_status=$(docker compose ps --format json 2>/dev/null | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Health','unknown'))" \
-            2>/dev/null || echo "unknown")
-
-        if docker compose ps | grep -q "healthy"; then
-            healthy=true
-            break
-        fi
-        echo -ne "  Attempt ${i}/${retries}...\r"
-        sleep 5
-    done
-
+    # ── DNS check ─────────────────────────────────────────────────────────────
     echo
-    if [[ "$healthy" == true ]]; then
-        success "All containers are healthy."
-    else
-        warn "Containers may still be starting. Check with: docker compose ps"
+    step "Checking DNS (optional but recommended before deploying)..."
+    local vps_ip
+    vps_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
+    if [[ -n "$vps_ip" ]]; then
+        info "This VPS public IP: ${vps_ip}"
+        info "Create a DNS A record pointing your dashboard domain to ${vps_ip}"
+        info "before Coolify can provision a TLS certificate."
     fi
 
-    docker compose ps
+    # ── Step-by-step Coolify walkthrough ────────────────────────────────
+    echo
+    divider
+    echo -e "\n  ${BOLD}${CYAN}Coolify Deployment Steps${RESET}"
+    echo    "  Open the Coolify web UI and follow these steps:"
+    echo
+    echo -e "  ${BOLD}Step 1 — Create a new resource${RESET}"
+    echo    "  Projects → your project → + New Resource"
+    echo    "  → Public Repository"
+    echo
+    echo -e "  ${BOLD}Step 2 — Set the repository URL${RESET}"
+    echo    "  Repository URL: https://github.com/andrzj/oracle-vps-security-suite"
+    echo    "  Branch: main"
+    echo    "  Build Pack: Dockerfile"
+    echo
+    echo -e "  ${BOLD}Step 3 — Set the build context${RESET}"
+    echo    "  In the resource settings → Build:"
+    echo    "  Dockerfile location: vps-security-dashboard/Dockerfile"
+    echo    "  Build context:       vps-security-dashboard"
+    echo
+    echo -e "  ${BOLD}Step 4 — Add environment variables${RESET}"
+    echo    "  In the resource settings → Environment Variables,"
+    echo    "  add the values printed in Phase 3 above:"
+    echo
+    echo    "    DOMAIN              <your-dashboard-domain>"
+    echo    "    TRUSTED_IP          <your-home-ip>"
+    echo    "    JWT_SECRET          <generated-in-phase-3>"
+    echo    "    SQLITE_DB_PATH      /app/data/security-dashboard.db"
+    echo    "    NODE_ENV            production"
+    echo
+    echo -e "  ${BOLD}Step 5 — Configure persistent storage${RESET}"
+    echo    "  In the resource settings → Storages:"
+    echo    "  Add a volume mount:"
+    echo    "    Source (host path): /opt/vps-dashboard-data"
+    echo    "    Destination:        /app/data"
+    echo    "  This persists the SQLite database across redeployments."
+    echo
+    echo -e "  ${BOLD}Step 6 — Configure the domain${RESET}"
+    echo    "  In the resource settings → Domains:"
+    echo    "  Add your dashboard domain (e.g. security.example.com)"
+    echo    "  Enable HTTPS (Let's Encrypt) — Coolify handles this automatically."
+    echo
+    echo -e "  ${BOLD}Step 7 — (Optional) Restrict access by IP${RESET}"
+    echo    "  In the resource settings → Network:"
+    echo    "  Add your TRUSTED_IP to the IP Allowlist."
+    echo    "  This blocks all other IPs at the Coolify proxy level."
+    echo
+    echo -e "  ${BOLD}Step 8 — Deploy${RESET}"
+    echo    "  Click \"Deploy\" (or \"Redeploy\")."
+    echo    "  Coolify will clone the repo, build the Docker image on this VPS,"
+    echo    "  and start the container. Watch the build log in the Coolify UI."
+    echo
+    echo -e "  ${BOLD}Step 9 — First-run admin setup${RESET}"
+    echo    "  Open https://<your-dashboard-domain> in your browser."
+    echo    "  You will see a setup screen to create your admin account."
+    echo    "  Credentials are stored in the SQLite database (bcrypt-hashed)."
+    divider
+    echo
 
-    save_state "dashboard_deploy"
+    if confirm "  Have you completed the Coolify deployment steps above?"; then
+        save_state "dashboard_deploy"
+        success "Phase 4 complete. Dashboard deployment initiated via Coolify."
+    else
+        info "No problem — you can complete the Coolify steps at any time."
+        info "Re-run main.sh to resume from where you left off."
+        info "Full guide: $SCRIPT_DIR/vps-security-dashboard/DEPLOYMENT.md"
+    fi
 }
 
 # =============================================================================
 # FINAL SUMMARY
 # =============================================================================
 final_summary() {
-    local domain
-    domain=$(grep "^DOMAIN=" "$DOCKER_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "your-domain.com")
-    local trusted_ip
-    trusted_ip=$(grep "^TRUSTED_IP=" "$DOCKER_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "your-ip")
+    local vps_ip
+    vps_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || echo "<your-vps-ip>")
 
     divider
     echo
-    echo -e "${GREEN}${BOLD}  ✔  Installation complete!${RESET}"
+    echo -e "${GREEN}${BOLD}  ✔  Host setup complete!${RESET}"
     echo
-    echo -e "  ${BOLD}Dashboard URL:${RESET}   https://${domain}"
-    echo -e "  ${BOLD}Accessible from:${RESET} ${trusted_ip} only"
+    echo -e "  ${BOLD}VPS IP:${RESET}          ${vps_ip}"
     echo -e "  ${BOLD}Install log:${RESET}     ${LOG_FILE}"
     echo
     divider
     echo
-    echo -e "  ${BOLD}Quick reference:${RESET}"
+    echo -e "  ${BOLD}What was installed on this host:${RESET}"
+    echo -e "  ${GREEN}✔${RESET}  System hardening (SSH, UFW, Fail2Ban, kernel, AIDE)"
+    echo -e "  ${GREEN}✔${RESET}  Security monitoring service (systemd)"
+    echo -e "  ${GREEN}✔${RESET}  Sudoers config for dashboard host access"
     echo
-    echo -e "  ${CYAN}# View dashboard logs${RESET}"
-    echo    "  cd $DOCKER_DIR && docker compose logs -f"
+    echo -e "  ${BOLD}Next step:${RESET}"
+    echo    "  Complete the Coolify deployment steps shown in Phase 4 above."
+    echo    "  Full guide: $SCRIPT_DIR/vps-security-dashboard/DEPLOYMENT.md"
+    echo
+    divider
+    echo
+    echo -e "  ${BOLD}Quick reference (post-deployment):${RESET}"
+    echo
+    echo -e "  ${CYAN}# View dashboard container logs${RESET}"
+    echo    "  # In Coolify UI → your resource → Logs tab"
+    echo    "  # Or on the host:"
+    echo    "  docker logs \$(docker ps -qf name=vps-security-dashboard) -f"
     echo
     echo -e "  ${CYAN}# Check monitoring service${RESET}"
     echo    "  sudo systemctl status security-monitor"
@@ -564,14 +533,13 @@ final_summary() {
     echo -e "  ${CYAN}# Analyse logs${RESET}"
     echo    "  bash $SCRIPTS_DIR/monitoring/analyze_logs.sh"
     echo
-    echo -e "  ${CYAN}# Update your trusted IP (if it changes)${RESET}"
-    echo    "  nano $DOCKER_DIR/caddy/Caddyfile"
-    echo    "  cd $DOCKER_DIR && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile"
-    echo
     echo -e "  ${CYAN}# Backup the SQLite database${RESET}"
-    echo    "  docker run --rm -v vps-security-dashboard_app_data:/data \\"
-    echo    "    -v \$(pwd):/backup alpine \\"
-    echo    "    cp /data/security-dashboard.db /backup/security-dashboard-\$(date +%F).db"
+    echo    "  cp /opt/vps-dashboard-data/security-dashboard.db \\"
+    echo    "     /opt/vps-dashboard-data/security-dashboard-\$(date +%F).db"
+    echo
+    echo -e "  ${CYAN}# Redeploy after a git push${RESET}"
+    echo    "  # Coolify auto-redeploys on push to main (if webhook is configured)"
+    echo    "  # Or trigger manually: Coolify UI → your resource → Redeploy"
     echo
     divider
     echo

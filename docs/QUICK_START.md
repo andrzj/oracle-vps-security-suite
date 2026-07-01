@@ -10,7 +10,7 @@ cd oracle-vps-security-suite
 sudo bash main.sh
 ```
 
-The installer will ask you a small number of questions (SSH port, trusted IP, domain, credentials) and do the rest automatically. It is **idempotent** — if interrupted, re-run it and it will skip completed phases.
+The installer will ask you a small number of questions (SSH port) and walk you through the Coolify deployment steps interactively. It is **idempotent** — if interrupted, re-run it and it will skip completed phases.
 
 **Estimated time:** 5–10 minutes on a fresh Oracle Cloud free tier instance.
 
@@ -113,36 +113,33 @@ Configures a weekly cron job to check for and apply updates to the monitoring sc
 
 ### Step 7 — Deploy the Security Dashboard
 
-The dashboard provides a browser-based interface for monitoring alerts, managing Fail2Ban bans, viewing firewall rules, and reading logs.
+The dashboard is deployed via **Coolify** (already installed on your VPS). The `main.sh` Phase 3 installs the sudoers config and prints the environment variables you need. Phase 4 walks you through the Coolify UI.
+
+If you prefer to do it manually:
+
+**a) Install the sudoers config:**
 
 ```bash
-cd vps-security-dashboard/docker
-cp env.template .env
-nano .env   # fill in DOMAIN, TRUSTED_IP, JWT_SECRET, and Manus credentials
-chmod 600 .env
-```
-
-Configure the Caddyfile:
-
-```bash
-nano caddy/Caddyfile
-# Replace YOUR_DOMAIN and YOUR_HOME_IP
-```
-
-Install the sudoers config for least-privilege host access:
-
-```bash
-sudo cp sudoers-dashboard.conf /etc/sudoers.d/dashboard
+sudo cp vps-security-dashboard/sudoers-dashboard.conf /etc/sudoers.d/dashboard
 sudo chmod 440 /etc/sudoers.d/dashboard
 sudo visudo -c   # validate — never skip this
 ```
 
-Open ports 80 and 443 in your Oracle Cloud Security List, then deploy:
+**b) Create the persistent storage directory:**
 
 ```bash
-docker compose up -d
-docker compose ps   # verify containers are healthy
+sudo mkdir -p /opt/vps-dashboard-data
+sudo chown 1001:1001 /opt/vps-dashboard-data
 ```
+
+**c) In the Coolify UI:**
+
+1. New Resource → Public Repository → `https://github.com/andrzj/oracle-vps-security-suite`
+2. Build context: `vps-security-dashboard` | Dockerfile: `vps-security-dashboard/Dockerfile`
+3. Add env vars: `DOMAIN`, `TRUSTED_IP`, `JWT_SECRET`, `SQLITE_DB_PATH=/app/data/security-dashboard.db`, `NODE_ENV=production`
+4. Add volume: `/opt/vps-dashboard-data` → `/app/data`
+5. Add your domain and enable HTTPS
+6. Deploy
 
 See [`vps-security-dashboard/DEPLOYMENT.md`](../vps-security-dashboard/DEPLOYMENT.md) for the full deployment guide including DNS setup, backup procedures, and troubleshooting.
 
@@ -199,15 +196,13 @@ sudo ufw allow 8080/tcp   # replace with your port
 
 ### Dashboard shows 403 Forbidden
 
-Your IP is not in the Caddyfile's `remote_ip` list. Update it and reload:
+Your source IP does not match `TRUSTED_IP` in the Coolify IP allowlist. Update it:
 
-```bash
-nano vps-security-dashboard/docker/caddy/Caddyfile
-# Update the remote_ip line
+1. Open Coolify UI → your resource → Network
+2. Update the IP Allowlist with your current IP
+3. Redeploy (or the change may apply immediately depending on your Coolify version)
 
-cd vps-security-dashboard/docker
-docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
-```
+Alternatively, temporarily remove the IP restriction to verify connectivity, then re-add it.
 
 ---
 

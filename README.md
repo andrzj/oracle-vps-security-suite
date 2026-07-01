@@ -26,8 +26,8 @@ The installer guides you through four sequential phases:
 |-------|-------------|
 | **1 — System Hardening** | SSH hardening, UFW firewall, Fail2Ban, kernel parameters, AIDE file integrity, automatic security updates. Optionally changes SSH port and enables 2FA. Includes a safety gate — if you change the SSH port, the installer pauses and requires you to confirm connectivity on the new port before continuing. |
 | **2 — Security Monitoring** | Installs the real-time log monitoring service as a systemd unit. Optionally configures email alerts and weekly auto-updates for the monitoring scripts. |
-| **3 — Dashboard Configuration** | Interactively collects `DOMAIN`, `TRUSTED_IP` (auto-detected from your current IP), `JWT_SECRET` (auto-generated if left blank), and Manus OAuth credentials. Writes `.env` with `chmod 600`, patches the Caddyfile, and installs the sudoers config. |
-| **4 — Dashboard Deploy** | Installs Docker if missing, checks DNS resolution, runs `docker compose up -d --build`, health-checks containers, and prints a final summary with quick-reference commands. |
+| **3 — Dashboard Configuration** | Installs `/etc/sudoers.d/dashboard` (least-privilege host access for the container), auto-generates a `JWT_SECRET`, and prints all environment variables you need to enter in the Coolify UI. |
+| **4 — Dashboard Deploy** | Verifies Coolify is running, checks DNS, and walks you through the Coolify UI step-by-step: connect the GitHub repo, set env vars, configure a persistent volume, add your domain, and trigger the first deployment. |
 
 ---
 
@@ -51,10 +51,16 @@ sudo bash scripts/monitoring/setup_email_alerts.sh   # optional
 
 ### Phase 3 — Deploy Dashboard
 
+The dashboard is deployed via **Coolify** (already installed on your VPS). After running `main.sh` through Phase 3, open the Coolify UI and follow the steps in the deployment guide:
+
 ```bash
-cd vps-security-dashboard/docker
-cp env.template .env && nano .env
-docker compose up -d
+# In Coolify UI:
+# 1. New Resource → Public Repository
+# 2. URL: https://github.com/andrzj/oracle-vps-security-suite
+# 3. Build context: vps-security-dashboard
+# 4. Set env vars from Phase 3 output
+# 5. Add volume mount: /opt/vps-dashboard-data → /app/data
+# 6. Deploy
 ```
 
 See [`vps-security-dashboard/DEPLOYMENT.md`](vps-security-dashboard/DEPLOYMENT.md) for the full step-by-step deployment guide.
@@ -82,20 +88,21 @@ The suite includes a full-stack browser-based security dashboard built with Reac
 Internet
     │
     ▼
-Caddy :443 (HTTPS + IP restriction — only your IP can reach the dashboard)
+Coolify Proxy (Traefik) — HTTPS + optional IP allowlist
     │
     ▼
-App :3000 (Express + React)
+App container (Express + React)
     │
     ├── SQLite (single file, zero network surface, trivially backed up)
+    │      mounted from /opt/vps-dashboard-data on the host
     │
-    └── Host system (read-only log mounts + limited sudo via sudoers)
+    └── Host system (limited sudo via /etc/sudoers.d/dashboard)
          ├── /var/log (read-only)
          ├── fail2ban-client (via sudo)
          └── ufw (via sudo)
 ```
 
-**Stack:** Next.js 16 · React 19 · tRPC 11 · Drizzle ORM · SQLite (better-sqlite3) · Caddy 2 · Docker Compose v5 · Node.js 24 LTS
+**Stack:** React 19 · Vite · tRPC 11 · Express 4 · Drizzle ORM · SQLite (better-sqlite3) · Coolify · Node.js 24 LTS
 
 ---
 
@@ -124,13 +131,10 @@ oracle-vps-security-suite/
 │       └── configure_firewall.sh          ← Interactive firewall management
 │
 ├── vps-security-dashboard/            ← Browser-based security dashboard
-│   ├── DEPLOYMENT.md                  ← Full deployment guide
-│   ├── docker/
-│   │   ├── docker-compose.yml
-│   │   ├── Dockerfile
-│   │   ├── caddy/Caddyfile
-│   │   ├── env.template
-│   │   └── sudoers-dashboard.conf
+│   ├── DEPLOYMENT.md                  ← Full Coolify deployment guide
+│   ├── Dockerfile                     ← Coolify-compatible image build
+│   ├── env.example                    ← Environment variable reference
+│   ├── sudoers-dashboard.conf         ← Least-privilege host access config
 │   ├── client/                        ← React frontend
 │   ├── server/                        ← Express + tRPC backend
 │   └── drizzle/                       ← SQLite schema and migrations
@@ -161,7 +165,7 @@ oracle-vps-security-suite/
 | Verify hardening is still intact | `scripts/utilities/verify_security.sh` |
 | Update the monitoring suite | `scripts/updates/update_monitor.sh --update` |
 | Roll back after a bad update | `scripts/updates/update_monitor.sh --rollback` |
-| Deploy the web dashboard only | `cd vps-security-dashboard/docker && docker compose up -d` |
+| Deploy the web dashboard only | Follow `vps-security-dashboard/DEPLOYMENT.md` (Coolify UI) |
 
 ---
 
@@ -336,10 +340,13 @@ sudo systemctl restart security-monitor
 ### Dashboard issues
 
 ```bash
-cd vps-security-dashboard/docker
-docker compose ps
-docker compose logs -f app
-docker compose logs -f caddy
+# In Coolify UI → your resource → Logs tab
+
+# Or on the host:
+docker logs $(docker ps -qf name=vps-security-dashboard) -f
+
+# Check container status:
+docker ps | grep vps-security-dashboard
 ```
 
 ---
@@ -349,7 +356,7 @@ docker compose logs -f caddy
 1. **Keep your SSH key safe** — store a backup in a secure location before hardening
 2. **Test SSH in a new terminal** before closing your current session after hardening
 3. **Update your Oracle Cloud Security List** if you change the SSH port
-4. **The dashboard is IP-restricted** — only `TRUSTED_IP` can reach it; update the Caddyfile if your IP changes
+4. **The dashboard is IP-restricted** — only `TRUSTED_IP` can reach it; update the IP allowlist in Coolify (resource settings → Network) if your IP changes
 5. **Back up the SQLite database** regularly — see the backup commands in `vps-security-dashboard/DEPLOYMENT.md`
 
 ---

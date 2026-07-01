@@ -1,16 +1,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # VPS Security Dashboard — Production Dockerfile
-# Multi-stage build: builder → production
+# Coolify-compatible multi-stage build: builder → production
 # Base: node:24-alpine (Node.js 24 LTS "Krypton")
 #
-# Database: SQLite via better-sqlite3 (single file, zero extra services)
-# The SQLite file is stored in /app/data/ which is mounted as a Docker volume.
+# Deployment: Coolify connects to the GitHub repo, detects this Dockerfile,
+# builds the image on the VPS, and manages TLS/domain/proxy automatically.
+#
+# Database: SQLite via better-sqlite3 (single file, zero extra services).
+# Persist /app/data as a Coolify volume for the SQLite file to survive redeploys.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
 FROM node:24-alpine AS builder
 
-# Build dependencies: python3/make/g++ are required for better-sqlite3 native bindings
+# Build dependencies: python3/make/g++ required for better-sqlite3 native bindings
 RUN apk add --no-cache python3 make g++ libc6-compat
 
 # Install pnpm
@@ -29,14 +32,14 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY . .
 
-# Build the application
+# Build the application (frontend + backend)
 RUN pnpm run build
 
 # ── Stage 2: Production ───────────────────────────────────────────────────────
 FROM node:24-alpine AS production
 
 # Runtime dependencies:
-#   python3/make/g++ — required to rebuild better-sqlite3 native bindings for production
+#   python3/make/g++ — required to rebuild better-sqlite3 native bindings
 #   sudo             — for running ufw and fail2ban-client with least privilege
 #   wget             — for Docker health checks
 #   tzdata           — timezone data
@@ -65,7 +68,7 @@ COPY patches/ ./patches/
 # This recompiles better-sqlite3 native bindings for the production Alpine image
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy built artifacts from builder
+# Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/client/dist ./client/dist
 
@@ -73,16 +76,16 @@ COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/drizzle ./drizzle
 
 # Create SQLite data directory and set ownership
-# This directory is mounted as a Docker volume for persistence
+# Mount this path as a Coolify persistent volume: /app/data
 RUN mkdir -p /app/data && chown dashboard:dashboard /app/data
 
 # Switch to non-root user
 USER dashboard
 
-# Expose app port
+# Expose app port — Coolify's proxy (Traefik/Caddy) routes traffic here
 EXPOSE 3000
 
-# Health check
+# Health check — Coolify uses this to determine container readiness
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
